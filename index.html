@@ -758,7 +758,11 @@ function renderBmi(){
   $("bmiJudge").innerHTML=j.t+'<br><span style="color:var(--faint)">身長 '+S.profile.h+'cm 基準</span>';
   $("bmiJudge").style.color=j.c;
 }
-function renderStamps(){
+/* 入力途中の日付。保存するか別の日に移るまで、裏の再描画（同期など）で欄を上書きしない */
+var editing=null, shownDate=null;
+function markEditing(){ editing=S.date; }
+
+function renderStamps(load){
   var box=$("stamps");
   if(!box.dataset.built){
     box.innerHTML = STAMPS.map(function(s){
@@ -767,6 +771,7 @@ function renderStamps(){
     }).join("");
     box.dataset.built="1";
   }
+  if(load===false) return;
   var cur=(S.logs[S.date]&&S.logs[S.date].stamps)||[];
   Array.prototype.forEach.call(box.children,function(btn){
     var id=btn.dataset.stamp, on=cur.indexOf(id)>=0;
@@ -783,16 +788,20 @@ function renderInput(){
     '<span class="'+(dw===0?"sun":dw===6?"sat":"")+'">'+d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日（'+DOW[dw]+'）</span>'+
     (rel?'　<span style="color:var(--faint)">'+rel+'</span>':"");
 
-  var e=S.logs[S.date]||{};
-  $("in-w").value    = e.w!=null?e.w.toFixed(1):"";
-  $("in-f").value    = e.f!=null?e.f.toFixed(1):"";
-  $("in-waist").value= e.waist!=null?e.waist.toFixed(1):"";
-  $("in-memo").value = e.memo||"";
+  var keep = (editing===S.date);   /* 入力途中なら欄の中身には触らない */
+  if(!keep){
+    editing=null;
+    var e=S.logs[S.date]||{};
+    $("in-w").value    = e.w!=null?e.w.toFixed(1):"";
+    $("in-f").value    = e.f!=null?e.f.toFixed(1):"";
+    $("in-waist").value= e.waist!=null?e.waist.toFixed(1):"";
+    $("in-memo").value = e.memo||"";
+  }
   renderPrev("w","kg"); renderPrev("f","%"); renderPrev("waist","cm");
-  renderStamps(); renderBmi();
+  renderStamps(!keep); renderBmi();
 
   var saved = !!S.logs[S.date] && !S.demo;
-  resetDel();
+  if(S.date!==shownDate){ resetDel(); shownDate=S.date; }
   $("delBtn").hidden = !saved;
   $("savedNote").textContent = saved ? "この日の記録は保存済みです。書き換えて「保存する」で更新されます。" : "";
 }
@@ -821,6 +830,7 @@ function doSave(){
   if(wasDemo){ clearDemoIfNeeded(); }
   S.logs[S.date]=o;
   delete S.tombs[S.date];
+  editing=null;
   saveLocal(); pushLog(S.date); syncSoon();
   toast(md(S.date)+" を保存しました");
   renderAll();
@@ -847,6 +857,7 @@ function doDelete(){
   resetDel();
   delete S.logs[S.date];
   S.tombs[S.date]=Date.now();
+  editing=null;
   saveLocal(); pushLog(S.date); syncSoon();
   toast(md(S.date)+" を削除しました");
   renderAll();
@@ -1246,13 +1257,14 @@ document.addEventListener("click",function(ev){
   if(!t) return;
   if(t.dataset.tab){ setTab(t.dataset.tab); return; }
   if(t.dataset.stamp){
+    markEditing();
     var on=t.getAttribute("aria-pressed")==="true";
     t.setAttribute("aria-pressed",on?"false":"true");
     t.style.background=on?"":SMAP[t.dataset.stamp].color;
     t.style.borderColor=on?"":SMAP[t.dataset.stamp].color;
     return;
   }
-  if(t.dataset.fill){ $("in-"+t.dataset.fill).value=t.dataset.val; renderPrev(t.dataset.fill,{w:"kg",f:"%",waist:"cm"}[t.dataset.fill]); renderBmi(); return; }
+  if(t.dataset.fill){ markEditing(); $("in-"+t.dataset.fill).value=t.dataset.val; renderPrev(t.dataset.fill,{w:"kg",f:"%",waist:"cm"}[t.dataset.fill]); renderBmi(); return; }
   if(t.dataset.range!==undefined && t.dataset.range!==""){ S.range=+t.dataset.range; S.pick=null; renderAll(); return; }
   if(t.dataset.right){ S.right=t.dataset.right; renderAll(); return; }
   if(t.dataset.day){ S.date=t.dataset.day; setTab("input"); return; }
@@ -1266,6 +1278,7 @@ document.addEventListener("click",function(ev){
   if(t.dataset.wk){ S.wkPick=t.dataset.wk; renderWeekChart(); return; }
 });
 
+$("in-memo").addEventListener("input",markEditing);
 $("dPrev").addEventListener("click",function(){ S.date=shiftD(S.date,-1); renderInput(); });
 $("dNext").addEventListener("click",function(){ S.date=shiftD(S.date,1); renderInput(); });
 $("date").addEventListener("change",function(){ if(this.value){ S.date=this.value; renderInput(); } });
@@ -1275,6 +1288,7 @@ $("delBtn").addEventListener("click",doDelete);
 ["w","f","waist"].forEach(function(k){
   var unit={w:"kg",f:"%",waist:"cm"}[k];
   $("in-"+k).addEventListener("input",function(){
+    markEditing();
     renderPrev(k,unit);
     if(k==="w") renderBmi();
   });
