@@ -227,6 +227,17 @@ textarea:focus{outline:none;border-color:var(--w)}
 .stats .k{font-size:11.5px;letter-spacing:.1em;color:var(--faint)}
 .stats .v{font-family:"Roboto Mono",monospace;font-size:19px;font-weight:500;margin-top:2px}
 
+/* ---- weekly table ---- */
+.wktable{margin-top:12px;overflow-x:auto}
+.wktable table{width:100%;border-collapse:collapse;font-size:13.5px}
+.wktable th{font-size:11.5px;color:var(--faint);font-weight:500;text-align:right;padding:6px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+.wktable td{padding:8px 6px;border-bottom:1px solid var(--line-soft);text-align:right;font-family:"Roboto Mono",monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+.wktable th:first-child,.wktable td:first-child{text-align:left}
+.wktable td.wkd{font-size:12.5px;color:var(--muted)}
+.wktable tr[data-wk]{cursor:pointer}
+.wktable tr.sel td{background:var(--surface-2)}
+.wktable .ptl{font-family:"Zen Kaku Gothic New",sans-serif;font-size:11px;color:var(--faint)}
+
 /* ---- calendar ---- */
 .calhd{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .calhd h2{font-size:18px;flex:1;text-align:center;font-family:"Roboto Mono",monospace;font-weight:500}
@@ -367,6 +378,7 @@ nav{
   <!-- ============ グラフ ============ -->
   <section id="tab-chart" hidden>
     <div class="card">
+      <p class="eyebrow">日ごと</p>
       <div class="segs" id="rangeSegs">
         <button class="seg" data-range="30">30日</button>
         <button class="seg" data-range="90">90日</button>
@@ -380,6 +392,24 @@ nav{
       <svg class="chart" id="chart" viewBox="0 0 360 216" role="img" aria-label="体重の折れ線グラフ"></svg>
       <div class="readout" id="readout"></div>
       <div class="stats" id="stats"></div>
+    </div>
+
+    <div class="card">
+      <p class="eyebrow">週間平均</p>
+      <div class="segs" id="wkRangeSegs">
+        <button class="seg" data-wkrange="8">8週</button>
+        <button class="seg" data-wkrange="13">3か月</button>
+        <button class="seg" data-wkrange="26">半年</button>
+        <button class="seg" data-wkrange="0">全部</button>
+      </div>
+      <div class="segs" id="wkStartSegs">
+        <button class="seg" data-wkstart="0">日〜土で区切る</button>
+        <button class="seg" data-wkstart="1">月〜日で区切る</button>
+      </div>
+      <svg class="chart" id="wkChart" viewBox="0 0 360 216" role="img" aria-label="週間平均の折れ線グラフ"></svg>
+      <div class="readout" id="wkReadout"></div>
+      <div class="wktable" id="wkTable"></div>
+      <p class="note" style="margin-top:8px">記録した日だけで平均します（記録のない日は計算に入れません）。右軸は上の「日ごと」で選んだ項目と同じです。白抜きの点は、まだ途中の今週です。</p>
     </div>
   </section>
 
@@ -486,13 +516,16 @@ var S = {
   tab:"input",
   range:30,
   right:"f",
+  wkRange:13,              /* 週間平均の期間（週） */
+  wkStart:0,               /* 週のはじまり 0=日曜 1=月曜 */
+  wkPick:null,
   pick:null,
   month:null
 };
 var DB=null, unsub=null;
 var SY={url:"",key:"",auto:true};          /* スプレッドシート同期の設定 */
 var LS_LOGS="karada.logs.v1", LS_PROF="karada.profile.v1";
-var LS_TOMB="karada.tombs.v1", LS_SYNC="karada.sync.v1";
+var LS_TOMB="karada.tombs.v1", LS_SYNC="karada.sync.v1", LS_WKST="karada.wkstart.v1";
 
 /* ---------------- 小道具 ---------------- */
 function $(id){ return document.getElementById(id); }
@@ -519,6 +552,7 @@ function loadLocal(){
     var p=localStorage.getItem(LS_PROF); if(p) S.profile=Object.assign(S.profile,JSON.parse(p)||{});
     var t=localStorage.getItem(LS_TOMB); if(t) S.tombs=JSON.parse(t)||{};
     var y=localStorage.getItem(LS_SYNC); if(y) SY=Object.assign(SY,JSON.parse(y)||{});
+    var ws=localStorage.getItem(LS_WKST); if(ws==="0"||ws==="1") S.wkStart=+ws;
   }catch(e){}
 }
 function saveLocal(){
@@ -960,6 +994,157 @@ function renderStats(pts,rightKey,unit){
     '<div><div class="k">記録日数</div><div class="v">'+pts.length+'</div></div>';
 }
 
+/* ---------------- 週間平均 ---------------- */
+function weekStartOf(dstr,start){
+  var d=parseD(dstr), off=(d.getDay()-start+7)%7;
+  d.setDate(d.getDate()-off);
+  return fmtD(d);
+}
+function avgOf(a){ if(!a.length) return null; var s=0; a.forEach(function(v){ s+=v; }); return s/a.length; }
+function weeklySeries(){
+  var map={}, st=S.wkStart, today=todayStr();
+  Object.keys(S.logs).forEach(function(k){
+    var e=S.logs[k], wk=weekStartOf(k,st);
+    var m=map[wk]||(map[wk]={w:[],f:[],waist:[],n:0});
+    if(e.w!=null) m.w.push(e.w);
+    if(e.f!=null) m.f.push(e.f);
+    if(e.waist!=null) m.waist.push(e.waist);
+    if(e.w!=null||e.f!=null||e.waist!=null) m.n++;
+  });
+  var from = S.wkRange>0 ? weekStartOf(shiftD(today,-(S.wkRange-1)*7),st) : null;
+  var list=Object.keys(map).sort().filter(function(k){ return (!from||k>=from) && map[k].n>0; }).map(function(k){
+    var m=map[k], end=shiftD(k,6);
+    return {d:k,end:end,w:avgOf(m.w),f:avgOf(m.f),waist:avgOf(m.waist),n:m.n,partial:end>=today};
+  });
+  /* 前週（記録のある直前の週）との差を付けておく */
+  var lastW=null, lastR={f:null,waist:null};
+  list.forEach(function(p){
+    p.pw=lastW; p.pf=lastR.f; p.pwaist=lastR.waist;
+    if(p.w!==null) lastW=p.w;
+    if(p.f!==null) lastR.f=p.f;
+    if(p.waist!==null) lastR.waist=p.waist;
+  });
+  return list;
+}
+function wkLabel(p){ return md(p.d)+"〜"+md(p.end); }
+
+function renderWeekChart(){
+  var svg=$("wkChart"), pts=weeklySeries();
+  var W=360,H=216,L=36,R=36,T=14,B=26, iw=W-L-R, ih=H-T-B;
+  var rk=S.right, rc = rk==="f" ? "var(--f)" : "var(--waist)";
+  var wv=pts.filter(function(p){ return p.w!==null; });
+  var rv=pts.filter(function(p){ return p[rk]!==null; });
+
+  if(!wv.length && !rv.length){
+    svg.innerHTML='<text x="180" y="110" text-anchor="middle" fill="var(--faint)" font-size="12" font-family="inherit">この期間の記録はまだありません</text>';
+    $("wkReadout").innerHTML=""; $("wkTable").innerHTML="";
+    return;
+  }
+
+  var t0=parseD(pts[0].d).getTime(), t1=parseD(pts[pts.length-1].d).getTime();
+  if(t1===t0){ t0-=7*86400000; t1+=7*86400000; }
+  function X(d){ return L + (parseD(d).getTime()-t0)/(t1-t0)*iw; }
+
+  var wVals=wv.map(function(p){ return p.w; });
+  if(S.profile.target) wVals=wVals.concat([S.profile.target]);
+  var ws = wVals.length ? niceScale(Math.min.apply(null,wVals),Math.max.apply(null,wVals)) : {lo:0,hi:1};
+  var rs = rv.length ? niceScale(Math.min.apply(null,rv.map(function(p){ return p[rk]; })),
+                                 Math.max.apply(null,rv.map(function(p){ return p[rk]; }))) : {lo:0,hi:1};
+  function YL(v){ return T + ih - (v-ws.lo)/(ws.hi-ws.lo)*ih; }
+  function YR(v){ return T + ih - (v-rs.lo)/(rs.hi-rs.lo)*ih; }
+
+  var g=[], i, n=4;
+  for(i=0;i<=n;i++){
+    var y=T+ih*i/n;
+    g.push('<line x1="'+L+'" y1="'+y.toFixed(1)+'" x2="'+(L+iw)+'" y2="'+y.toFixed(1)+'" stroke="var(--line-soft)" stroke-width="1"/>');
+    if(wv.length) g.push('<text x="'+(L-6)+'" y="'+(y+3.5).toFixed(1)+'" text-anchor="end" font-size="9.5" font-family="Roboto Mono,monospace" fill="var(--w)">'+(ws.hi-(ws.hi-ws.lo)*i/n).toFixed(1)+'</text>');
+    if(rv.length) g.push('<text x="'+(L+iw+6)+'" y="'+(y+3.5).toFixed(1)+'" text-anchor="start" font-size="9.5" font-family="Roboto Mono,monospace" fill="'+rc+'">'+(rs.hi-(rs.hi-rs.lo)*i/n).toFixed(1)+'</text>');
+  }
+
+  if(S.profile.target && wv.length){
+    var ty=YL(S.profile.target);
+    if(ty>T-1 && ty<T+ih+1){
+      g.push('<line x1="'+L+'" y1="'+ty.toFixed(1)+'" x2="'+(L+iw)+'" y2="'+ty.toFixed(1)+'" stroke="var(--good)" stroke-width="1" stroke-dasharray="3 3"/>');
+      g.push('<text x="'+(L+3)+'" y="'+(ty-4).toFixed(1)+'" font-size="9" font-family="inherit" fill="var(--good)">目標 '+S.profile.target+'kg</text>');
+    }
+  }
+
+  /* 週の開始日ラベル（最初・中ほど・最後） */
+  var labIdx=[0];
+  if(pts.length>2) labIdx.push(Math.floor(pts.length/2));
+  if(pts.length>1) labIdx.push(pts.length-1);
+  labIdx.forEach(function(ix,k){
+    var p=pts[ix], anchor = k===0 ? "start" : (ix===pts.length-1 ? "end" : "middle");
+    g.push('<text x="'+X(p.d).toFixed(1)+'" y="'+(T+ih+15)+'" text-anchor="'+anchor+'" font-size="9.5" font-family="Roboto Mono,monospace" fill="var(--muted)">'+md(p.d)+'〜</text>');
+  });
+
+  function path(list,key,Y){
+    return list.map(function(p,ix){ return (ix?"L":"M")+X(p.d).toFixed(1)+" "+Y(p[key]).toFixed(1); }).join(" ");
+  }
+  function dot(p,key,Y,color,r){
+    var cx=X(p.d).toFixed(1), cy=Y(p[key]).toFixed(1);
+    return p.partial
+      ? '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="var(--surface)" stroke="'+color+'" stroke-width="1.6"/>'
+      : '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+color+'"/>';
+  }
+
+  if(rv.length>1) g.push('<path d="'+path(rv,rk,YR)+'" fill="none" stroke="'+rc+'" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 3"/>');
+  rv.forEach(function(p){ g.push(dot(p,rk,YR,rc,2.6)); });
+  if(wv.length>1) g.push('<path d="'+path(wv,"w",YL)+'" fill="none" stroke="var(--w)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>');
+  wv.forEach(function(p){ g.push(dot(p,"w",YL,"var(--w)",3.4)); });
+
+  var pick = pickedWeek(pts);
+  if(pick){
+    var px=X(pick.d);
+    g.push('<line x1="'+px.toFixed(1)+'" y1="'+T+'" x2="'+px.toFixed(1)+'" y2="'+(T+ih)+'" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 2"/>');
+  }
+
+  pts.forEach(function(p,ix){
+    var x=X(p.d);
+    var xp = ix>0 ? X(pts[ix-1].d) : x-10;
+    var xn = ix<pts.length-1 ? X(pts[ix+1].d) : x+10;
+    var x0=(xp+x)/2, x1=(x+xn)/2;
+    g.push('<rect x="'+x0.toFixed(1)+'" y="'+T+'" width="'+Math.max(1,x1-x0).toFixed(1)+'" height="'+ih+'" fill="transparent" data-wk="'+p.d+'"/>');
+  });
+
+  svg.innerHTML=g.join("");
+  renderWeekReadout(pick,rk,rc);
+  renderWeekTable(pts,rk,pick);
+}
+function pickedWeek(pts){
+  var i;
+  if(S.wkPick) for(i=0;i<pts.length;i++) if(pts[i].d===S.wkPick) return pts[i];
+  return pts.length ? pts[pts.length-1] : null;
+}
+function renderWeekReadout(p,rk,rc){
+  var box=$("wkReadout");
+  if(!p){ box.innerHTML=""; return; }
+  var ru = rk==="f" ? "%" : "cm", prevR = rk==="f" ? p.pf : p.pwaist;
+  var parts=[];
+  parts.push('<span class="d">'+wkLabel(p)+(p.partial?"（途中）":"")+'</span>');
+  if(p.w!==null)  parts.push('<span class="val" style="color:var(--w)">'+p.w.toFixed(1)+'<span style="font-size:11px">kg</span></span>'+deltaHtml(p.w,p.pw));
+  if(p[rk]!==null) parts.push('<span class="val" style="color:'+rc+'">'+p[rk].toFixed(1)+'<span style="font-size:11px">'+ru+'</span></span>'+deltaHtml(p[rk],prevR));
+  parts.push('<span class="d">記録 '+p.n+'日</span>');
+  box.innerHTML=parts.join("");
+}
+function renderWeekTable(pts,rk,pick){
+  var rname = rk==="f" ? "体脂肪率" : "腹囲";
+  var rows = pts.slice(-10).reverse().map(function(p){
+    var prevR = rk==="f" ? p.pf : p.pwaist;
+    return '<tr data-wk="'+p.d+'"'+(pick&&pick.d===p.d?' class="sel"':'')+'>'+
+      '<td class="wkd">'+wkLabel(p)+(p.partial?' <span class="ptl">途中</span>':'')+'</td>'+
+      '<td>'+(p.w!==null?p.w.toFixed(1):"–")+'</td>'+
+      '<td>'+(deltaHtml(p.w,p.pw)||'<span style="color:var(--faint)">–</span>')+'</td>'+
+      '<td>'+(p[rk]!==null?p[rk].toFixed(1):"–")+'</td>'+
+      '<td>'+(deltaHtml(p[rk],prevR)||'<span style="color:var(--faint)">–</span>')+'</td>'+
+      '<td>'+p.n+'</td>'+
+    '</tr>';
+  }).join("");
+  $("wkTable").innerHTML =
+    '<table><thead><tr><th>週</th><th>体重</th><th>前週比</th><th>'+rname+'</th><th>前週比</th><th>日数</th></tr></thead>'+
+    '<tbody>'+rows+'</tbody></table>';
+}
+
 /* ---------------- カレンダー ---------------- */
 function renderCal(){
   var m=S.month||(S.date.slice(0,7));
@@ -1038,7 +1223,7 @@ function setTab(t){
 function renderAll(){
   $("demoBanner").hidden=!S.demo;
   if(S.tab==="input") renderInput();
-  if(S.tab==="chart") renderChart();
+  if(S.tab==="chart"){ renderChart(); renderWeekChart(); }
   if(S.tab==="cal")   renderCal();
   if(S.tab==="set")   renderSet();
   Array.prototype.forEach.call(document.querySelectorAll("#rangeSegs .seg"),function(b){
@@ -1047,11 +1232,17 @@ function renderAll(){
   Array.prototype.forEach.call(document.querySelectorAll("#rightSegs .seg"),function(b){
     b.setAttribute("aria-pressed", (b.dataset.right===S.right)?"true":"false");
   });
+  Array.prototype.forEach.call(document.querySelectorAll("#wkRangeSegs .seg"),function(b){
+    b.setAttribute("aria-pressed", (+b.dataset.wkrange===S.wkRange)?"true":"false");
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("#wkStartSegs .seg"),function(b){
+    b.setAttribute("aria-pressed", (+b.dataset.wkstart===S.wkStart)?"true":"false");
+  });
 }
 
 /* ---------------- イベント ---------------- */
 document.addEventListener("click",function(ev){
-  var t=ev.target.closest ? ev.target.closest("[data-tab],[data-stamp],[data-fill],[data-range],[data-right],[data-day],[data-pt]") : null;
+  var t=ev.target.closest ? ev.target.closest("[data-tab],[data-stamp],[data-fill],[data-range],[data-right],[data-day],[data-pt],[data-wkrange],[data-wkstart],[data-wk]") : null;
   if(!t) return;
   if(t.dataset.tab){ setTab(t.dataset.tab); return; }
   if(t.dataset.stamp){
@@ -1066,6 +1257,13 @@ document.addEventListener("click",function(ev){
   if(t.dataset.right){ S.right=t.dataset.right; renderAll(); return; }
   if(t.dataset.day){ S.date=t.dataset.day; setTab("input"); return; }
   if(t.dataset.pt){ S.pick=t.dataset.pt; renderChart(); return; }
+  if(t.dataset.wkrange!==undefined){ S.wkRange=+t.dataset.wkrange; S.wkPick=null; renderAll(); return; }
+  if(t.dataset.wkstart!==undefined){
+    S.wkStart=+t.dataset.wkstart; S.wkPick=null;
+    try{ localStorage.setItem(LS_WKST,String(S.wkStart)); }catch(e){}
+    renderAll(); return;
+  }
+  if(t.dataset.wk){ S.wkPick=t.dataset.wk; renderWeekChart(); return; }
 });
 
 $("dPrev").addEventListener("click",function(){ S.date=shiftD(S.date,-1); renderInput(); });

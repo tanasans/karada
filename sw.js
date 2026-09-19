@@ -1,7 +1,7 @@
 /* からだ日記 オフライン用 Service Worker
    - アプリ本体は「まずネット、ダメならキャッシュ」＝更新がすぐ反映される
    - Webフォントは「まずキャッシュ」＝2回目以降は通信せず即座に表示される */
-var APP = 'karada-app-v1';
+var APP = 'karada-app-v2';
 var LIB = 'karada-font-v1';
 var CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
