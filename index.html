@@ -623,13 +623,14 @@ function connect(){
 function hhmm(){ var d=new Date(); return pad(d.getMonth()+1)+"/"+pad(d.getDate())+" "+pad(d.getHours())+":"+pad(d.getMinutes()); }
 function syncNote(t){ var el=$("syncNote"); if(el) el.textContent=t; }
 
-var syncTimer=null, syncing=false;
+var syncTimer=null, syncing=false, lastSyncOk=0;
 function syncSoon(){
   if(!SY.url || !SY.auto) return;
   clearTimeout(syncTimer);
   syncTimer=setTimeout(function(){ syncNow(true); },1500);
 }
-function syncNow(quiet){
+function syncNow(quiet,attempt){
+  attempt = attempt || 1;
   if(!SY.url){ if(!quiet) toast("同期URLを入れてください"); return Promise.resolve(false); }
   if(syncing) return Promise.resolve(false);
   syncing=true;
@@ -672,6 +673,7 @@ function syncNow(quiet){
       S.demo=false;
       if(total) saveLocal();                        /* 本物があるときだけ保存 */
       else ensureDemo();                            /* 両方とも空ならサンプル表示に戻す */
+      lastSyncOk=Date.now();
       setSync("同期 "+hhmm(),true);
       syncNote("最後に同期したのは "+hhmm()+" です。手元 "+sent+" 日ぶんを送り、向こうから "+got+" 日ぶんを受け取って、いま "+total+" 日ぶんになりました。");
       renderAll();
@@ -679,8 +681,19 @@ function syncNow(quiet){
       return true;
     })
     .catch(function(err){
+      var msg = (err && err.message) ? err.message : String(err);
+      var wrongKey = /あいことば/.test(msg);
+      /* 電波やGoogle側の一時的な不調は、黙ってやり直す */
+      if(!wrongKey && attempt<3){
+        setSync("つなぎ直し中…",false);
+        syncNote("うまくつながらなかったので、数秒後にもう一度試します。");
+        setTimeout(function(){ syncNow(quiet,attempt+1); }, attempt*3000);
+        return false;
+      }
       setSync("同期できません",false);
-      syncNote("同期できませんでした（"+(err&&err.message?err.message:err)+"）。URLとあいことばを確かめてください。");
+      syncNote(wrongKey
+        ? "あいことばが違います。スクリプトに書いた文字と同じか確かめてください。"
+        : "何度か試しましたが届きませんでした（"+msg+"）。電波の状態か、Google側が混んでいるのが原因のことが多いです。記録はこの端末に残っているので、しばらくしてから「今すぐ同期」を押してください。");
       if(!quiet) toast("同期できませんでした");
       return false;
     })
@@ -1432,7 +1445,8 @@ if(!(window.claude && window.claude.use)){
   else setSync("この端末に保存",false);
   /* アプリに戻ってきたときも最新に合わせる */
   document.addEventListener("visibilitychange",function(){
-    if(!document.hidden && SY.url && SY.auto) syncNow(true);
+    /* 直前に同期できていれば、呼び出しすぎない（順番待ちで失敗するのを防ぐ） */
+    if(!document.hidden && SY.url && SY.auto && Date.now()-lastSyncOk>60000) syncNow(true);
   });
 }
 })();
