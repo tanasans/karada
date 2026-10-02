@@ -645,19 +645,37 @@ function syncNow(quiet){
     .then(function(r){ return r.json(); })
     .then(function(d){
       if(!d || !d.ok) throw new Error((d&&d.error)||"同期できませんでした");
-      S.logs=d.logs||{};
-      S.tombs=d.tombs||{};
+
+      /* 受け取った内容で手元を置き換えず、必ず突き合わせる。
+         （向こうが空でも、手元の記録を消さないため） */
+      var remote=d.logs||{}, rtombs=d.tombs||{}, k;
+      var merged={}, base = S.demo ? {} : S.logs;   /* サンプル表示中は手元を使わない */
+      for(k in base) if(base.hasOwnProperty(k)) merged[k]=base[k];
+      for(k in remote) if(remote.hasOwnProperty(k)){
+        var mine=merged[k];
+        if(!mine || (remote[k].u||0) >= (mine.u||0)) merged[k]=remote[k];
+      }
+      var tombs={};
+      for(k in S.tombs) if(S.tombs.hasOwnProperty(k)) tombs[k]=S.tombs[k];
+      for(k in rtombs) if(rtombs.hasOwnProperty(k)) tombs[k]=Math.max(tombs[k]||0,rtombs[k]||0);
+      for(k in tombs) if(tombs.hasOwnProperty(k)){
+        if(merged[k] && tombs[k] > (merged[k].u||0)) delete merged[k];
+      }
+      var sent=Object.keys(base).length, got=Object.keys(remote).length;
+      S.logs=merged;
+      S.tombs=tombs;
       if(d.profile){
         if(d.profile.h!=null) S.profile.h=d.profile.h;
         if(d.profile.target!=null) S.profile.target=d.profile.target;
       }
+      var total=Object.keys(S.logs).length;
       S.demo=false;
-      saveLocal();                                  /* 先に本物を保存してから */
-      if(!Object.keys(S.logs).length) ensureDemo(); /* 空ならサンプル表示に戻す */
+      if(total) saveLocal();                        /* 本物があるときだけ保存 */
+      else ensureDemo();                            /* 両方とも空ならサンプル表示に戻す */
       setSync("同期 "+hhmm(),true);
-      syncNote("最後に同期したのは "+hhmm()+" です。記録は "+Object.keys(S.logs).length+" 日ぶん。");
+      syncNote("最後に同期したのは "+hhmm()+" です。手元 "+sent+" 日ぶんを送り、向こうから "+got+" 日ぶんを受け取って、いま "+total+" 日ぶんになりました。");
       renderAll();
-      if(!quiet) toast("同期しました");
+      if(!quiet) toast(total+"日ぶんになりました");
       return true;
     })
     .catch(function(err){
