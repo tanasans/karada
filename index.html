@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex,nofollow">
 <title>からだ日記</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#1f5066">
@@ -227,6 +228,47 @@ textarea:focus{outline:none;border-color:var(--w)}
 .stats .k{font-size:11.5px;letter-spacing:.1em;color:var(--faint)}
 .stats .v{font-family:"Roboto Mono",monospace;font-size:19px;font-weight:500;margin-top:2px}
 
+/* ---- photos ---- */
+.cats{display:flex;flex-wrap:wrap;gap:7px}
+.cat{
+  border:1px solid var(--line);background:var(--surface-2);color:var(--muted);
+  border-radius:99px;padding:7px 13px;font-size:13.5px;
+}
+.cat[aria-pressed="true"]{color:var(--surface);font-weight:700;border-color:transparent}
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
+.pgrid:empty{margin-top:0}
+.pgrid.big{grid-template-columns:repeat(3,1fr);gap:5px}
+.pcell{
+  position:relative;aspect-ratio:1/1;border-radius:9px;overflow:hidden;
+  border:1px solid var(--line-soft);background:var(--surface-2);padding:0;display:block;
+}
+.pcell img{width:100%;height:100%;object-fit:cover;display:block}
+.pcell .tag{
+  position:absolute;left:0;right:0;bottom:0;padding:3px 5px;font-size:10px;line-height:1.3;
+  color:#fff;background:linear-gradient(to top,rgba(0,0,0,.62),rgba(0,0,0,0));
+  text-align:left;font-family:"Roboto Mono",monospace;
+}
+.pcell .tag b{font-family:"Zen Kaku Gothic New",sans-serif;font-weight:500}
+
+.viewer{
+  position:fixed;inset:0;z-index:80;background:rgba(10,14,13,.94);
+  display:flex;flex-direction:column;
+}
+.vimg{flex:1;display:flex;align-items:center;justify-content:center;padding:8px;min-height:0}
+.vimg img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px}
+.vbar{
+  display:flex;align-items:center;gap:10px;padding:12px 14px;color:#f1f5f3;font-size:13.5px;
+  padding-top:calc(12px + env(safe-area-inset-top));
+}
+.vbar.bottom{justify-content:center;gap:12px;padding-top:12px;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+.vbar span{flex:1}
+.vbtn{
+  border:1px solid rgba(255,255,255,.42);background:transparent;color:#f1f5f3;
+  border-radius:10px;padding:9px 15px;font-size:14px;
+}
+.vbtn.danger{border-color:rgba(255,160,160,.6);color:#ffb3b3}
+.vbtn:active{background:rgba(255,255,255,.14)}
+
 /* ---- weekly table ---- */
 .wktable{margin-top:12px;overflow-x:auto}
 .wktable table{width:100%;border-collapse:collapse;font-size:13.5px}
@@ -299,7 +341,7 @@ nav{
   backdrop-filter:blur(10px);border-top:1px solid var(--line);
   padding-bottom:env(safe-area-inset-bottom);
 }
-.nv{max-width:460px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
+.nv{max-width:460px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
 .nv button{
   background:none;border:0;padding:9px 0 11px;display:flex;flex-direction:column;align-items:center;gap:3px;
   font-size:11.5px;color:var(--muted);letter-spacing:.04em;
@@ -366,6 +408,19 @@ nav{
     <div class="card">
       <p class="eyebrow">メモ</p>
       <textarea id="in-memo" placeholder="体調、食べたもの、気づいたことなど"></textarea>
+    </div>
+
+    <div class="card" id="dayPhotoCard">
+      <p class="eyebrow">写真</p>
+      <div class="cats" id="dayCats"></div>
+      <div class="btnrow">
+        <button class="ghost" id="camBtn">カメラで撮る</button>
+        <button class="ghost" id="pickBtn">写真から選ぶ</button>
+      </div>
+      <input type="file" id="camIn" accept="image/*" capture="environment" hidden>
+      <input type="file" id="pickIn" accept="image/*" multiple hidden>
+      <div class="pgrid" id="dayPhotos"></div>
+      <p class="note" id="dayPhotoNote"></p>
     </div>
 
     <div class="savebar">
@@ -436,6 +491,19 @@ nav{
   </section>
 
   <!-- ============ 設定 ============ -->
+  <!-- ============ 写真 ============ -->
+  <section id="tab-photo" hidden>
+    <div class="card">
+      <p class="eyebrow">カテゴリで絞る</p>
+      <div class="cats" id="filterCats"></div>
+      <p class="note" id="photoCount" style="margin-top:10px"></p>
+      <div class="pgrid big" id="allPhotos"></div>
+      <div class="btnrow" id="moreRow" hidden>
+        <button class="ghost" id="moreBtn">さらに表示</button>
+      </div>
+    </div>
+  </section>
+
   <section id="tab-set" hidden>
     <div class="card">
       <div class="srow">
@@ -456,7 +524,7 @@ nav{
       </div>
       <div class="scol">
         <label for="sync-key">あいことば<span class="hint">スプレッドシート側と同じ文字を入れます</span></label>
-        <input id="sync-key" type="text" placeholder="karada2026" spellcheck="false">
+        <input id="sync-key" type="text" placeholder="自分で決めた文字" spellcheck="false">
       </div>
       <label class="check"><input type="checkbox" id="sync-auto"><span>記録を保存したとき、自動で同期する</span></label>
       <div class="btnrow">
@@ -485,9 +553,22 @@ nav{
     <button data-tab="input" aria-pressed="true"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>記録</button>
     <button data-tab="chart"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14l4-5 3 3 5-7"/></svg>グラフ</button>
     <button data-tab="cal"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>カレンダー</button>
+    <button data-tab="photo"><svg viewBox="0 0 24 24"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2l1.2-2h8.2l1.2 2h2.2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5Z"/><circle cx="12" cy="12.5" r="3.4"/></svg>写真</button>
     <button data-tab="set"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7.3 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 14.6H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 8.3l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 4.6V4a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1.2Z"/></svg>設定</button>
   </div>
 </nav>
+
+<div class="viewer" id="viewer" hidden>
+  <div class="vbar">
+    <span id="vinfo"></span>
+    <button class="vbtn" id="vclose" aria-label="閉じる">✕</button>
+  </div>
+  <div class="vimg"><img id="vimg" alt=""></div>
+  <div class="vbar bottom">
+    <button class="vbtn" id="vsave">この写真を保存</button>
+    <button class="vbtn danger" id="vdel">削除</button>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -829,7 +910,7 @@ function renderInput(){
     $("in-memo").value = e.memo||"";
   }
   renderPrev("w","kg"); renderPrev("f","%"); renderPrev("waist","cm");
-  renderStamps(!keep); renderBmi();
+  renderStamps(!keep); renderBmi(); renderDayPhotos();
 
   var saved = !!S.logs[S.date] && !S.demo;
   if(S.date!==shownDate){ resetDel(); shownDate=S.date; }
@@ -1187,6 +1268,255 @@ function renderWeekTable(pts,rk,pick){
     '<tbody>'+rows+'</tbody></table>';
 }
 
+/* ---------------- 写真（この端末の中だけに保存） ----------------
+   画像の本体は IndexedDB に、一覧用の情報だけ localStorage に置く。
+   同期にもバックアップにも含めない。 */
+var PCATS=[
+  {id:"zenshin", name:"全身",  color:"#1f5066"},
+  {id:"kao",     name:"顔",    color:"#4a6d8c"},
+  {id:"asa",     name:"朝食",  color:"#b4762a"},
+  {id:"hiru",    name:"昼食",  color:"#8a6a3f"},
+  {id:"yoru",    name:"夕食",  color:"#a2506b"},
+  {id:"kanshoku",name:"間食",  color:"#6d7a38"},
+  {id:"sonota",  name:"その他",color:"#5c5f96"}
+];
+var PCMAP={}; PCATS.forEach(function(c){ PCMAP[c.id]=c; });
+var LS_PMETA="karada.photometa.v1";
+var PMETA=[];                 /* {id,date,cat,ts,size} 新しい順 */
+var PDBH=null, pCat="zenshin", pFilter="all", pShown=30, pOpen=null;
+var pUrls=[], vUrl=null;
+
+function photoDB(){
+  return new Promise(function(res,rej){
+    if(PDBH) return res(PDBH);
+    if(!window.indexedDB) return rej(new Error("この端末では写真を保存できません"));
+    var rq=indexedDB.open("karada-photos",1);
+    rq.onupgradeneeded=function(){
+      var db=rq.result;
+      if(!db.objectStoreNames.contains("photos")) db.createObjectStore("photos",{keyPath:"id"});
+    };
+    rq.onsuccess=function(){ PDBH=rq.result; res(PDBH); };
+    rq.onerror=function(){ rej(rq.error||new Error("写真の保管庫を開けません")); };
+  });
+}
+function pTx(mode){
+  return photoDB().then(function(db){ return db.transaction("photos",mode).objectStore("photos"); });
+}
+function pReq(r){
+  return new Promise(function(res,rej){
+    r.onsuccess=function(){ res(r.result); };
+    r.onerror=function(){ rej(r.error); };
+  });
+}
+function pGet(id){ return pTx("readonly").then(function(st){ return pReq(st.get(id)); }); }
+function pPut(rec){ return pTx("readwrite").then(function(st){ return pReq(st.put(rec)); }); }
+function pDel(id){ return pTx("readwrite").then(function(st){ return pReq(st["delete"](id)); }); }
+
+function loadPhotoMeta(){
+  try{
+    var m=localStorage.getItem(LS_PMETA);
+    PMETA = m ? (JSON.parse(m)||[]) : [];
+  }catch(e){ PMETA=[]; }
+}
+function savePhotoMeta(){
+  try{ localStorage.setItem(LS_PMETA,JSON.stringify(PMETA)); }catch(e){}
+}
+function photoBytes(){
+  var s=0; PMETA.forEach(function(p){ s+=p.size||0; }); return s;
+}
+function mb(bytes){
+  if(bytes<1024*1024) return Math.max(1,Math.round(bytes/1024))+"KB";
+  return (bytes/1024/1024).toFixed(1)+"MB";
+}
+function photosOn(date){
+  var n=0; PMETA.forEach(function(p){ if(p.date===date) n++; }); return n;
+}
+
+/* 長辺を縮めてJPEGにする。1枚あたり50KB前後になる */
+function shrinkImage(file,maxPx,quality){
+  return new Promise(function(res,rej){
+    function finish(src,w,h){
+      if(!w||!h) return rej(new Error("画像を読めません"));
+      var scale=Math.min(1,maxPx/Math.max(w,h));
+      var cw=Math.max(1,Math.round(w*scale)), ch=Math.max(1,Math.round(h*scale));
+      var cv=document.createElement("canvas");
+      cv.width=cw; cv.height=ch;
+      var cx=cv.getContext("2d");
+      cx.fillStyle="#ffffff"; cx.fillRect(0,0,cw,ch);
+      cx.drawImage(src,0,0,cw,ch);
+      if(cv.toBlob){
+        cv.toBlob(function(b){ b ? res({blob:b,w:cw,h:ch}) : rej(new Error("画像を変換できません")); },"image/jpeg",quality);
+      }else{
+        rej(new Error("この端末では画像を変換できません"));
+      }
+    }
+    function viaImg(){
+      var url=URL.createObjectURL(file), im=new Image();
+      im.onload=function(){ finish(im,im.naturalWidth,im.naturalHeight); URL.revokeObjectURL(url); };
+      im.onerror=function(){ URL.revokeObjectURL(url); rej(new Error("画像を読めません")); };
+      im.src=url;
+    }
+    if(window.createImageBitmap){
+      try{
+        createImageBitmap(file,{imageOrientation:"from-image"}).then(function(bmp){
+          finish(bmp,bmp.width,bmp.height);
+        },viaImg);
+        return;
+      }catch(e){ /* 古い端末 */ }
+    }
+    viaImg();
+  });
+}
+
+function addPhotos(files){
+  if(!files || !files.length) return;
+  var list=Array.prototype.slice.call(files), done=0, failed=0;
+  toast(list.length>1 ? list.length+"枚を取り込んでいます…" : "写真を取り込んでいます…");
+  var chain=Promise.resolve();
+  list.forEach(function(f){
+    chain=chain.then(function(){
+      return shrinkImage(f,720,0.62).then(function(r){
+        var rec={
+          id:String(Date.now())+"-"+Math.floor(Math.random()*100000),
+          date:S.date, cat:pCat, ts:Date.now(), size:r.blob.size, blob:r.blob
+        };
+        return pPut(rec).then(function(){
+          PMETA.unshift({id:rec.id,date:rec.date,cat:rec.cat,ts:rec.ts,size:rec.size});
+          done++;
+        });
+      }).catch(function(){ failed++; });
+    });
+  });
+  chain.then(function(){
+    savePhotoMeta();
+    renderDayPhotos();
+    if(S.tab==="photo") renderPhotoTab();
+    if(done) toast(done+"枚を保存しました（約"+mb(PMETA.slice(0,done).reduce(function(a,b){return a+(b.size||0);},0))+"）");
+    if(failed) toast(failed+"枚は取り込めませんでした");
+  });
+}
+
+function clearUrls(){
+  pUrls.forEach(function(u){ try{ URL.revokeObjectURL(u); }catch(e){} });
+  pUrls=[];
+}
+function photoCell(p){
+  var c=PCMAP[p.cat]||PCMAP.sonota;
+  return '<button type="button" class="pcell" data-photo="'+p.id+'">'+
+    '<img alt="'+esc(md(p.date)+" "+c.name)+'">'+
+    '<span class="tag"><b>'+esc(c.name)+'</b> '+md(p.date)+'</span>'+
+  '</button>';
+}
+function fillCells(box,list){
+  list.forEach(function(p){
+    pGet(p.id).then(function(rec){
+      if(!rec || !rec.blob) return;
+      var cell=box.querySelector('[data-photo="'+p.id+'"] img');
+      if(!cell) return;
+      var u=URL.createObjectURL(rec.blob);
+      pUrls.push(u);
+      cell.src=u;
+    }).catch(function(){});
+  });
+}
+function renderCats(box,withAll,selected){
+  var html="";
+  if(withAll) html+='<button type="button" class="cat" data-pfilter="all"'+(selected==="all"?' aria-pressed="true" style="background:var(--ink);border-color:var(--ink)"':'')+'>全部</button>';
+  html+=PCATS.map(function(c){
+    var on = selected===c.id;
+    return '<button type="button" class="cat" data-'+(withAll?"pfilter":"pcat")+'="'+c.id+'"'+
+      (on?' aria-pressed="true" style="background:'+c.color+'"':'')+'>'+c.name+'</button>';
+  }).join("");
+  box.innerHTML=html;
+}
+function renderDayPhotos(){
+  renderCats($("dayCats"),false,pCat);
+  var list=PMETA.filter(function(p){ return p.date===S.date; });
+  var box=$("dayPhotos");
+  box.innerHTML=list.map(photoCell).join("");
+  fillCells(box,list);
+  $("dayPhotoNote").textContent = list.length
+    ? "この日は "+list.length+" 枚。写真はこの端末の中だけに保存されます（同期やバックアップには入りません）。"
+    : "カテゴリを選んでから撮ると、あとで種類ごとに見返せます。写真はこの端末の中だけに保存されます。";
+}
+function renderPhotoTab(){
+  renderCats($("filterCats"),true,pFilter);
+  var list=PMETA.filter(function(p){ return pFilter==="all" || p.cat===pFilter; });
+  var show=list.slice(0,pShown);
+  var box=$("allPhotos");
+  clearUrls();
+  box.innerHTML=show.map(photoCell).join("");
+  fillCells(box,show);
+  $("photoCount").textContent = list.length
+    ? list.length+" 枚（全部で "+PMETA.length+" 枚・約"+mb(photoBytes())+"）。写真をタップすると大きく表示します。"
+    : "まだ写真がありません。記録タブの「カメラで撮る」から追加できます。";
+  $("moreRow").hidden = list.length<=pShown;
+}
+function openViewer(id){
+  var p=null;
+  PMETA.forEach(function(x){ if(x.id===id) p=x; });
+  if(!p) return;
+  pGet(id).then(function(rec){
+    if(!rec||!rec.blob){ toast("写真が見つかりません"); return; }
+    if(vUrl){ try{ URL.revokeObjectURL(vUrl); }catch(e){} }
+    vUrl=URL.createObjectURL(rec.blob);
+    pOpen=p;
+    var c=PCMAP[p.cat]||PCMAP.sonota;
+    var d=parseD(p.date);
+    $("vinfo").textContent=(d.getMonth()+1)+"月"+d.getDate()+"日（"+DOW[d.getDay()]+"）・"+c.name+"・"+mb(p.size||0);
+    $("vimg").src=vUrl;
+    $("vdel").textContent="削除";
+    $("viewer").hidden=false;
+  }).catch(function(){ toast("写真を開けません"); });
+}
+function closeViewer(){
+  $("viewer").hidden=true;
+  $("vimg").removeAttribute("src");
+  if(vUrl){ try{ URL.revokeObjectURL(vUrl); }catch(e){} vUrl=null; }
+  pOpen=null;
+}
+function deleteOpenPhoto(){
+  if(!pOpen) return;
+  var btn=$("vdel");
+  if(btn.textContent!=="もう一度押すと削除"){
+    btn.textContent="もう一度押すと削除";
+    setTimeout(function(){ if($("vdel")) $("vdel").textContent="削除"; },5000);
+    return;
+  }
+  var id=pOpen.id;
+  pDel(id).then(function(){
+    PMETA=PMETA.filter(function(p){ return p.id!==id; });
+    savePhotoMeta();
+    closeViewer();
+    renderDayPhotos();
+    if(S.tab==="photo") renderPhotoTab();
+    if(S.tab==="cal") renderCal();
+    toast("写真を削除しました");
+  }).catch(function(){ toast("削除できませんでした"); });
+}
+function saveOpenPhoto(){
+  if(!pOpen) return;
+  var p=pOpen, c=PCMAP[p.cat]||PCMAP.sonota;
+  var name="karada-"+p.date.replace(/-/g,"")+"-"+c.id+".jpg";
+  pGet(p.id).then(function(rec){
+    if(!rec||!rec.blob) return;
+    if(window.claude && window.claude.use){
+      window.claude.use("downloads").then(function(dl){
+        if(!dl){ toast("この画面では保存できません"); return; }
+        dl.save({filename:name,data:rec.blob}).then(function(){ toast("保存しました"); },function(){});
+      }).catch(function(){});
+      return;
+    }
+    try{
+      var u=URL.createObjectURL(rec.blob), a=document.createElement("a");
+      a.href=u; a.download=name; a.rel="noopener";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(u); },4000);
+      toast("保存しました");
+    }catch(e){ toast("保存できませんでした"); }
+  });
+}
+
 /* ---------------- カレンダー ---------------- */
 function renderCal(){
   var m=S.month||(S.date.slice(0,7));
@@ -1203,7 +1533,8 @@ function renderCal(){
     var key=y+"-"+pad(mo)+"-"+pad(i);
     var e=S.logs[key], dw=new Date(y,mo-1,i).getDay();
     var cls="day"+(e?" has":"")+(key===today?" today":"");
-    var inner='<div class="n s'+dw+'">'+i+'</div>';
+    var np=photosOn(key);
+    var inner='<div class="n s'+dw+'">'+i+(np?' <span style="font-size:8px">📷</span>':"")+'</div>';
     if(e){
       if(e.w!=null)     inner+='<div class="m w">'+e.w.toFixed(1)+'</div>';
       if(e.f!=null)     inner+='<div class="m f">'+e.f.toFixed(1)+'</div>';
@@ -1249,13 +1580,13 @@ function renderSet(){
   var n=Object.keys(S.logs).length;
   $("dataNote").textContent = S.demo
     ? "いまはサンプル表示中です。最初の記録を保存すると本物のデータに切り替わります。"
-    : n+" 日ぶんの記録があります。";
+    : n+" 日ぶんの記録があります。写真は "+PMETA.length+" 枚（約"+mb(photoBytes())+"）。写真はこの端末の中だけに保存され、同期やバックアップには入りません。";
 }
 
 /* ---------------- タブ ---------------- */
 function setTab(t){
   S.tab=t;
-  ["input","chart","cal","set"].forEach(function(k){ $("tab-"+k).hidden = (k!==t); });
+  ["input","chart","cal","photo","set"].forEach(function(k){ $("tab-"+k).hidden = (k!==t); });
   Array.prototype.forEach.call(document.querySelectorAll(".nv button"),function(b){
     b.setAttribute("aria-pressed", b.dataset.tab===t ? "true":"false");
   });
@@ -1267,6 +1598,7 @@ function renderAll(){
   if(S.tab==="input") renderInput();
   if(S.tab==="chart"){ renderChart(); renderWeekChart(); }
   if(S.tab==="cal")   renderCal();
+  if(S.tab==="photo") renderPhotoTab();
   if(S.tab==="set")   renderSet();
   Array.prototype.forEach.call(document.querySelectorAll("#rangeSegs .seg"),function(b){
     b.setAttribute("aria-pressed", (+b.dataset.range===S.range)?"true":"false");
@@ -1284,7 +1616,7 @@ function renderAll(){
 
 /* ---------------- イベント ---------------- */
 document.addEventListener("click",function(ev){
-  var t=ev.target.closest ? ev.target.closest("[data-tab],[data-stamp],[data-fill],[data-range],[data-right],[data-day],[data-pt],[data-wkrange],[data-wkstart],[data-wk]") : null;
+  var t=ev.target.closest ? ev.target.closest("[data-tab],[data-stamp],[data-fill],[data-range],[data-right],[data-day],[data-pt],[data-wkrange],[data-wkstart],[data-wk],[data-pcat],[data-pfilter],[data-photo]") : null;
   if(!t) return;
   if(t.dataset.tab){ setTab(t.dataset.tab); return; }
   if(t.dataset.stamp){
@@ -1307,6 +1639,21 @@ document.addEventListener("click",function(ev){
     renderAll(); return;
   }
   if(t.dataset.wk){ S.wkPick=t.dataset.wk; renderWeekChart(); return; }
+  if(t.dataset.pcat){ pCat=t.dataset.pcat; renderCats($("dayCats"),false,pCat); return; }
+  if(t.dataset.pfilter){ pFilter=t.dataset.pfilter; pShown=30; renderPhotoTab(); return; }
+  if(t.dataset.photo){ openViewer(t.dataset.photo); return; }
+});
+
+$("camBtn").addEventListener("click",function(){ $("camIn").click(); });
+$("pickBtn").addEventListener("click",function(){ $("pickIn").click(); });
+$("camIn").addEventListener("change",function(){ addPhotos(this.files); this.value=""; });
+$("pickIn").addEventListener("change",function(){ addPhotos(this.files); this.value=""; });
+$("moreBtn").addEventListener("click",function(){ pShown+=30; renderPhotoTab(); });
+$("vclose").addEventListener("click",closeViewer);
+$("vdel").addEventListener("click",deleteOpenPhoto);
+$("vsave").addEventListener("click",saveOpenPhoto);
+document.addEventListener("keydown",function(e){
+  if(e.key==="Escape" && !$("viewer").hidden) closeViewer();
 });
 
 $("in-memo").addEventListener("input",markEditing);
@@ -1435,6 +1782,7 @@ $("syncBtn").addEventListener("click",function(){ syncNow(false); });
 
 /* ---------------- 起動 ---------------- */
 loadLocal();
+loadPhotoMeta();
 ensureDemo();
 S.month=S.date.slice(0,7);
 setSync("読み込み中",false);
