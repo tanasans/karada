@@ -254,8 +254,16 @@ textarea:focus{outline:none;border-color:var(--w)}
   position:fixed;inset:0;z-index:80;background:rgba(10,14,13,.94);
   display:flex;flex-direction:column;
 }
-.vimg{flex:1;display:flex;align-items:center;justify-content:center;padding:8px;min-height:0}
-.vimg img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px}
+.vimg{flex:1;display:flex;align-items:center;justify-content:center;padding:8px;min-height:0;touch-action:pan-y;overflow:hidden}
+.vimg img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px;transition:opacity .12s ease}
+.vimg img.swapping{opacity:.25}
+.vnav{display:flex;align-items:center;justify-content:center;gap:16px;padding:4px 14px}
+.vnav .vbtn{min-width:56px;font-size:22px;line-height:1;padding:6px 14px 9px}
+.vnav .vbtn[disabled]{opacity:.3}
+.vpos{
+  font-family:"Roboto Mono",monospace;font-size:13px;color:#dfe7e4;
+  min-width:72px;text-align:center;font-variant-numeric:tabular-nums;
+}
 .vbar{
   display:flex;align-items:center;gap:10px;padding:12px 14px;color:#f1f5f3;font-size:13.5px;
   padding-top:calc(12px + env(safe-area-inset-top));
@@ -564,6 +572,11 @@ nav{
     <button class="vbtn" id="vclose" aria-label="閉じる">✕</button>
   </div>
   <div class="vimg"><img id="vimg" alt=""></div>
+  <div class="vnav">
+    <button class="vbtn" id="vprev" aria-label="前の写真">‹</button>
+    <span class="vpos" id="vpos"></span>
+    <button class="vbtn" id="vnext" aria-label="次の写真">›</button>
+  </div>
   <div class="vbar bottom">
     <button class="vbtn" id="vsave">この写真を保存</button>
     <button class="vbtn danger" id="vdel">削除</button>
@@ -1285,6 +1298,7 @@ var LS_PMETA="karada.photometa.v1";
 var PMETA=[];                 /* {id,date,cat,ts,size} 新しい順 */
 var PDBH=null, pCat="zenshin", pFilter="all", pShown=30, pOpen=null;
 var pUrls=[], vUrl=null;
+var pViewList=[], pIndex=0, pLastDay=[], pLastAll=[];
 
 function photoDB(){
   return new Promise(function(res,rej){
@@ -1432,6 +1446,7 @@ function renderCats(box,withAll,selected){
 function renderDayPhotos(){
   renderCats($("dayCats"),false,pCat);
   var list=PMETA.filter(function(p){ return p.date===S.date; });
+  pLastDay=list;
   var box=$("dayPhotos");
   box.innerHTML=list.map(photoCell).join("");
   fillCells(box,list);
@@ -1443,6 +1458,7 @@ function renderPhotoTab(){
   renderCats($("filterCats"),true,pFilter);
   var list=PMETA.filter(function(p){ return pFilter==="all" || p.cat===pFilter; });
   var show=list.slice(0,pShown);
+  pLastAll=show;   /* 表示している範囲を、そのままスワイプの順番に使う */
   var box=$("allPhotos");
   clearUrls();
   box.innerHTML=show.map(photoCell).join("");
@@ -1452,22 +1468,46 @@ function renderPhotoTab(){
     : "まだ写真がありません。記録タブの「カメラで撮る」から追加できます。";
   $("moreRow").hidden = list.length<=pShown;
 }
+/* いま見ているひと続きの写真（記録タブならその日の分、写真タブなら絞り込み後の分） */
 function openViewer(id){
-  var p=null;
-  PMETA.forEach(function(x){ if(x.id===id) p=x; });
-  if(!p) return;
-  pGet(id).then(function(rec){
-    if(!rec||!rec.blob){ toast("写真が見つかりません"); return; }
+  var list = (S.tab==="photo") ? pLastAll : pLastDay;
+  var ix=-1, i;
+  for(i=0;i<list.length;i++) if(list[i].id===id) ix=i;
+  if(ix<0){ list=PMETA; for(i=0;i<list.length;i++) if(list[i].id===id) ix=i; }
+  if(ix<0) return;
+  pViewList=list;
+  $("vdel").textContent="削除";
+  $("viewer").hidden=false;
+  showPhotoAt(ix);
+}
+function showPhotoAt(ix){
+  if(!pViewList.length){ closeViewer(); return; }
+  if(ix<0 || ix>=pViewList.length) return;
+  var p=pViewList[ix];
+  var img=$("vimg");
+  img.classList.add("swapping");
+  pGet(p.id).then(function(rec){
+    if(!rec||!rec.blob){ toast("写真が見つかりません"); img.classList.remove("swapping"); return; }
     if(vUrl){ try{ URL.revokeObjectURL(vUrl); }catch(e){} }
     vUrl=URL.createObjectURL(rec.blob);
-    pOpen=p;
-    var c=PCMAP[p.cat]||PCMAP.sonota;
-    var d=parseD(p.date);
+    pOpen=p; pIndex=ix;
+    var c=PCMAP[p.cat]||PCMAP.sonota, d=parseD(p.date);
     $("vinfo").textContent=(d.getMonth()+1)+"月"+d.getDate()+"日（"+DOW[d.getDay()]+"）・"+c.name+"・"+mb(p.size||0);
-    $("vimg").src=vUrl;
+    $("vpos").textContent=(ix+1)+" / "+pViewList.length;
+    $("vprev").disabled = (ix<=0);
+    $("vnext").disabled = (ix>=pViewList.length-1);
     $("vdel").textContent="削除";
-    $("viewer").hidden=false;
-  }).catch(function(){ toast("写真を開けません"); });
+    img.src=vUrl;
+    img.classList.remove("swapping");
+  }).catch(function(){ img.classList.remove("swapping"); toast("写真を開けません"); });
+}
+function stepPhoto(dir){
+  var ix=pIndex+dir;
+  if(ix<0 || ix>=pViewList.length){
+    toast(dir<0 ? "最初の写真です" : "最後の写真です");
+    return;
+  }
+  showPhotoAt(ix);
 }
 function closeViewer(){
   $("viewer").hidden=true;
@@ -1483,15 +1523,18 @@ function deleteOpenPhoto(){
     setTimeout(function(){ if($("vdel")) $("vdel").textContent="削除"; },5000);
     return;
   }
-  var id=pOpen.id;
+  var id=pOpen.id, keep=pIndex;
   pDel(id).then(function(){
     PMETA=PMETA.filter(function(p){ return p.id!==id; });
+    pViewList=pViewList.filter(function(p){ return p.id!==id; });
     savePhotoMeta();
-    closeViewer();
     renderDayPhotos();
     if(S.tab==="photo") renderPhotoTab();
     if(S.tab==="cal") renderCal();
     toast("写真を削除しました");
+    /* 残りがあれば、そのまま次の写真を表示する */
+    if(pViewList.length) showPhotoAt(Math.min(keep,pViewList.length-1));
+    else closeViewer();
   }).catch(function(){ toast("削除できませんでした"); });
 }
 function saveOpenPhoto(){
@@ -1652,9 +1695,47 @@ $("moreBtn").addEventListener("click",function(){ pShown+=30; renderPhotoTab(); 
 $("vclose").addEventListener("click",closeViewer);
 $("vdel").addEventListener("click",deleteOpenPhoto);
 $("vsave").addEventListener("click",saveOpenPhoto);
+$("vprev").addEventListener("click",function(){ stepPhoto(-1); });
+$("vnext").addEventListener("click",function(){ stepPhoto(1); });
 document.addEventListener("keydown",function(e){
-  if(e.key==="Escape" && !$("viewer").hidden) closeViewer();
+  if($("viewer").hidden) return;
+  if(e.key==="Escape")     closeViewer();
+  if(e.key==="ArrowLeft")  stepPhoto(-1);
+  if(e.key==="ArrowRight") stepPhoto(1);
 });
+
+/* 横にスワイプで前後の写真へ */
+(function(){
+  var area=$("viewer"), x0=0, y0=0, t0=0, tracking=false;
+  area.addEventListener("touchstart",function(e){
+    if(e.touches.length!==1){ tracking=false; return; }
+    tracking=true;
+    x0=e.touches[0].clientX; y0=e.touches[0].clientY; t0=Date.now();
+  },{passive:true});
+  area.addEventListener("touchmove",function(e){
+    if(!tracking || e.touches.length!==1) return;
+    var dx=e.touches[0].clientX-x0, dy=e.touches[0].clientY-y0;
+    /* 横に動いているときは、ページのスクロールを起こさない */
+    if(Math.abs(dx)>Math.abs(dy) && Math.abs(dx)>12 && e.cancelable) e.preventDefault();
+  },{passive:false});
+  area.addEventListener("touchend",function(e){
+    if(!tracking) return;
+    tracking=false;
+    var t=e.changedTouches[0];
+    var dx=t.clientX-x0, dy=t.clientY-y0, dt=Date.now()-t0;
+    if(dt>800) return;                                   /* ゆっくりなら無視 */
+    if(Math.abs(dx)<45 || Math.abs(dx)<Math.abs(dy)*1.3) return;
+    stepPhoto(dx<0 ? 1 : -1);                            /* 左へ払うと次の写真 */
+  },{passive:true});
+  /* パソコンでもドラッグで動かせるように */
+  var mx=null;
+  area.addEventListener("mousedown",function(e){ mx=e.clientX; });
+  area.addEventListener("mouseup",function(e){
+    if(mx===null) return;
+    var dx=e.clientX-mx; mx=null;
+    if(Math.abs(dx)>60) stepPhoto(dx<0?1:-1);
+  });
+})();
 
 $("in-memo").addEventListener("input",markEditing);
 $("dPrev").addEventListener("click",function(){ S.date=shiftD(S.date,-1); renderInput(); });
