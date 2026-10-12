@@ -504,6 +504,10 @@ nav{
     <div class="card">
       <p class="eyebrow">カテゴリで絞る</p>
       <div class="cats" id="filterCats"></div>
+      <div class="segs" id="orderSegs" style="margin-top:12px">
+        <button class="seg" data-porder="asc">古い順（推移を見る）</button>
+        <button class="seg" data-porder="desc">新しい順</button>
+      </div>
       <p class="note" id="photoCount" style="margin-top:10px"></p>
       <div class="pgrid big" id="allPhotos"></div>
       <div class="btnrow" id="moreRow" hidden>
@@ -1294,9 +1298,9 @@ var PCATS=[
   {id:"sonota",  name:"その他",color:"#5c5f96"}
 ];
 var PCMAP={}; PCATS.forEach(function(c){ PCMAP[c.id]=c; });
-var LS_PMETA="karada.photometa.v1";
+var LS_PMETA="karada.photometa.v1", LS_PORDER="karada.photoorder.v1";
 var PMETA=[];                 /* {id,date,cat,ts,size} 新しい順 */
-var PDBH=null, pCat="zenshin", pFilter="all", pShown=30, pOpen=null;
+var PDBH=null, pCat="zenshin", pFilter="all", pShown=30, pOpen=null, pOrder="asc";
 var pUrls=[], vUrl=null;
 var pViewList=[], pIndex=0, pLastDay=[], pLastAll=[];
 
@@ -1331,6 +1335,17 @@ function loadPhotoMeta(){
     var m=localStorage.getItem(LS_PMETA);
     PMETA = m ? (JSON.parse(m)||[]) : [];
   }catch(e){ PMETA=[]; }
+  try{
+    var o=localStorage.getItem(LS_PORDER);
+    if(o==="asc"||o==="desc") pOrder=o;
+  }catch(e){}
+}
+/* 日付（同じ日なら撮った時刻）で並べ替える */
+function sortP(list,asc){
+  return list.slice().sort(function(a,b){
+    var r = a.date<b.date ? -1 : (a.date>b.date ? 1 : ((a.ts||0)-(b.ts||0)));
+    return asc ? r : -r;
+  });
 }
 function savePhotoMeta(){
   try{ localStorage.setItem(LS_PMETA,JSON.stringify(PMETA)); }catch(e){}
@@ -1445,7 +1460,7 @@ function renderCats(box,withAll,selected){
 }
 function renderDayPhotos(){
   renderCats($("dayCats"),false,pCat);
-  var list=PMETA.filter(function(p){ return p.date===S.date; });
+  var list=sortP(PMETA.filter(function(p){ return p.date===S.date; }),true);   /* その日の中は撮った順 */
   pLastDay=list;
   var box=$("dayPhotos");
   box.innerHTML=list.map(photoCell).join("");
@@ -1456,8 +1471,13 @@ function renderDayPhotos(){
 }
 function renderPhotoTab(){
   renderCats($("filterCats"),true,pFilter);
+  Array.prototype.forEach.call(document.querySelectorAll("#orderSegs .seg"),function(b){
+    b.setAttribute("aria-pressed",(b.dataset.porder===pOrder)?"true":"false");
+  });
   var list=PMETA.filter(function(p){ return pFilter==="all" || p.cat===pFilter; });
-  var show=list.slice(0,pShown);
+  /* 新しいほうから pShown 枚を取り出し、選んだ並び順で表示する */
+  var recent=sortP(list,false).slice(0,pShown);
+  var show=sortP(recent,pOrder==="asc");
   pLastAll=show;   /* 表示している範囲を、そのままスワイプの順番に使う */
   var box=$("allPhotos");
   clearUrls();
@@ -1659,7 +1679,7 @@ function renderAll(){
 
 /* ---------------- イベント ---------------- */
 document.addEventListener("click",function(ev){
-  var t=ev.target.closest ? ev.target.closest("[data-tab],[data-stamp],[data-fill],[data-range],[data-right],[data-day],[data-pt],[data-wkrange],[data-wkstart],[data-wk],[data-pcat],[data-pfilter],[data-photo]") : null;
+  var t=ev.target.closest ? ev.target.closest("[data-tab],[data-stamp],[data-fill],[data-range],[data-right],[data-day],[data-pt],[data-wkrange],[data-wkstart],[data-wk],[data-pcat],[data-pfilter],[data-photo],[data-porder]") : null;
   if(!t) return;
   if(t.dataset.tab){ setTab(t.dataset.tab); return; }
   if(t.dataset.stamp){
@@ -1684,6 +1704,11 @@ document.addEventListener("click",function(ev){
   if(t.dataset.wk){ S.wkPick=t.dataset.wk; renderWeekChart(); return; }
   if(t.dataset.pcat){ pCat=t.dataset.pcat; renderCats($("dayCats"),false,pCat); return; }
   if(t.dataset.pfilter){ pFilter=t.dataset.pfilter; pShown=30; renderPhotoTab(); return; }
+  if(t.dataset.porder){
+    pOrder=t.dataset.porder;
+    try{ localStorage.setItem(LS_PORDER,pOrder); }catch(e){}
+    renderPhotoTab(); return;
+  }
   if(t.dataset.photo){ openViewer(t.dataset.photo); return; }
 });
 
